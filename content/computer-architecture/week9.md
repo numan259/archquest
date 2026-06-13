@@ -1,0 +1,647 @@
+COMPUTER ARCHITECTURE — WEEK SOURCE DOCUMENT
+
+Topic: PIPELINE HAZARDS (LEGv8/ARMv8, Patterson & Hennessy)
+
+Extracted from 110 handwritten lecture pages — source material for gamified Flutter learning app
+
+
+Extraction note: the deck is fully handwritten (tablet notes) with progressive-build slides — each slide redraws the previous table with one more cell filled. All build sequences were read to their final "solution" state, so no content is lost. Professor's red/blue/green pen notes are transcribed as [PROF NOTE] with color noted where it matters.
+
+
+
+
+1. WEEK OVERVIEW
+
+Topic title: Pipeline Hazards — the three things that stop the next instruction from executing in the next clock cycle, and every fix the course covers for each.
+
+Subtopics covered (in lecture order):
+
+
+What a hazard is; stalling as the universal (but worst) fix
+Structural Hazards — Ex1: single shared Data/Instruction memory (Fetch↔Memory conflict); Ex2: single-ported register file (Decode↔Writeback conflict); fixes: separate memories, read+write-capable register file
+Data Hazards — register dependency (ADD writes X9 → SUB needs X9); stall-until-writeback baseline; the "write first half / read second half of cycle" register-file trick; Fix A: compiler instruction scheduling; Fix B: data forwarding / bypassing from the EX/MEM register (ALU forwarding) and from the MEM/WB register (memory forwarding); the load-use hazard that forwarding cannot fully remove; pipeline registers IF/ID, ID/EX, EX/MEM, MEM/WB; a 5-instruction capstone trace combining everything
+Control (Branch) Hazards — two sub-problems (don't know which instruction to fetch; must calculate the target address); stall-on-branch costs 2 cycles; Fix 1: compiler rearrangement of non-dependent instructions + NOP filling; Fix 2: static branch prediction (always-taken / always-not-taken), prediction verification after Execute, FLUSH on misprediction, and a for-loop accuracy comparison (6/7 vs 1/7)
+
+
+Where this fits in the course narrative:
+
+
+What came before: the 5-stage LEGv8 pipeline itself (F-Fetch, D-Decode, E-Execute, M-Memory, W-Writeback) and the single-cycle datapath (the professor reuses the single-cycle datapath sketch on the branch-address slide, and the pipelined datapath figures from the textbook). The deck assumes you can already read a pipeline cycle table.
+What it leads to: dynamic branch prediction (this deck deliberately stops at static prediction — "always taken / always not taken" — so dynamic 1-bit/2-bit predictors are the natural next week), deeper pipelining, and performance analysis (the "cycles stalled" columns are proto-CPI analysis).
+
+
+Textbook page references written on the slides:
+
+
+pg. 300 — pipelined datapath figure with the four pipeline registers (IF/ID, ID/EX, EX/MEM, MEM/WB) [page 33 of the deck]
+pg. 290 — textbook timing figure of forwarding ADD X1,X2,X3 → SUB X4,X1,X5 (the blue line from ADD's EX to SUB's EX, 200ps-per-stage time axis 200…1000) [page 42 of the deck]
+
+
+Professor emphasis markers found: red underline+squiggle under "hazards" (p1) and "conditional branch" (p72/75); circled ①②③ for the three hazard types; circled Ⓐ/Ⓑ for the two data-hazard fixes and ①② for control-hazard fixes; green check-marks ✓ wherever a stalled stage finally succeeds; red ✗ on mispredicted branch Execute; "RESULTS IN" arrows; a Will Smith "TAA DAA" meme image introducing Branch Prediction (p89); explicit "lost 2 cycles", "cycles stalled", and "ideal" margin labels on comparison tables.
+
+
+2. CONCEPT BREAKDOWN
+
+
+2.1 Pipeline Hazard (umbrella concept)
+
+One-line definition: A hazard is any situation where the next instruction cannot execute in the next clock cycle.
+
+Visual-first explanation: Picture the pipeline as a 5-station assembly line (Fetch → Decode → Execute → Memory → Writeback). Ideally a new instruction enters the line every cycle, like cars on a conveyor. A hazard is anything that jams the conveyor: two cars needing the same tool at once (structural), a car needing a part the previous car hasn't finished making (data), or the line not knowing which car comes next (control).
+
+Exact slide details:
+
+
+"Sometimes the next instruction can not execute the next clock cycle. These are called hazards." (the word hazards is underlined in red with a squiggle)
+Three types, numbered and circled in red: ① Structural Hazard ② Data Hazard ③ Control Hazard
+Stage legend used on every table: F: Fetch, D: Decode, E: Execute, M: Memory, W: Writeback
+
+
+[PROF NOTE] (p2, red title "How to fix hazards?"): "We can just wait/stall. ↳ But we don't want to wait so we will try to find other solutions."
+
+Misconceptions / exam traps:
+
+
+Stalling is always a valid fix for every hazard type — it's just the slowest one. Exams love asking "which fix works for all hazards?" → stalling.
+The deck uses F/D/E/M/W; the textbook uses IF/ID/EX/MEM/WB. They are the same five stages.
+
+
+
+2.2 Structural Hazard
+
+One-line definition: The instructions we want to execute in the same clock cycle cannot be supported by the hardware at the same time.
+
+Visual-first explanation: Two workers reaching for the same single screwdriver in the same second. The hardware resource (a memory, a register-file port) physically exists only once, so one instruction must freeze in place and keep retrying until the tool is free.
+
+Exact slide details (Ex1 — single memory):
+
+
+Drawing: one box labeled "Data/Instruction memory" connected by a red double-arrow labeled Bus to a fork: "either data or instruction".
+"One instruction wants to fetch instruction when other wants to access data."
+[PROF NOTE] (red, all-caps arrow label): "RESULTS IN → Fetch & Memory steps can't be used in the same cycle!"
+Instruction sequence used for the trace (appears on nearly every table in the deck):
+ADD X9,X20,X21 / SUB X10,X22,X23 / ADD X11,X24,X25 / SUB X12,X26,X27 / LDUR X13,[X0,#0]
+The trace (cycle columns): first three instructions flow normally (F D E M W staggered). At cycle 4, ADD X9 is in M (circled red) while SUB X12 wants F → blocked. SUB X12's row becomes F F F F D E M W (three failed fetch attempts in red, success at cycle 7 marked with a green ✓ and "Fetch successful").
+[PROF NOTE] per failed attempt (red): "Can't Fetch, memory in use by ADD X9,X20,X21" (cycle 4) → "try to Fetch again, Can't Fetch, memory in use by SUB X10,X22,X23" (cycle 5) → "…memory in use by ADD X11,X24,X25" (cycle 6).
+[PROF NOTE] (blue, brace under cycles 4–6): "Fetch in use, LDUR can't start." Then (red): "LDUR can start now." → LDUR runs F D E M W starting cycle 8.
+[PROF NOTE] (red FIX): "Use seperate memories (Seperate Resources)" (professor's spelling preserved) — i.e., separate instruction memory and data memory.
+Comparison slide: "with structural hazard" table vs "without structural hazard" table, with a red bracket on the right labeled "cycles stalled" showing the with-hazard program finishes 3 cycles later.
+
+
+Exact slide details (Ex2 — register file):
+
+
+"Register File can not be read and written in the same cycle."
+Drawing: "Register File" box with a blue control note: "RegOp — 0: read, 1: write".
+"Either read from the register file or write to the register file."
+[PROF NOTE] (red): "RESULTS IN: Decode & Writeback steps can't be used in the same cycle!" (Decode reads registers; Writeback writes them.)
+Trace with the same 5 instructions: at cycle 5 ADD X9 is in W (circled) while SUB X12 wants D → SUB X12 becomes F D D D D E M W (three failed decodes; W of ADD X9, SUB X10, ADD X11 occupy cycles 5, 6, 7). LDUR queues behind with F F F F D E M W.
+[PROF NOTE] (red): "Can't Decode, writeback is in process" / "Try to decode again, Can't Decode, writeback is in process". (blue, for LDUR): "can't continue to decode, decode already in use."
+[PROF NOTE] (red FIX): "Design the register file, so that it is capable of being read & written in the same cycle."
+Same "with/without structural hazard" + "cycles stalled" comparison.
+
+
+Misconceptions / exam traps:
+
+
+Trap: thinking the blocked instruction's stall is the only effect. The slides hammer that the stall cascades: while SUB X12 hogs Fetch retrying, LDUR can't even start (blue notes). One structural conflict delays everything behind it.
+Trap: in Ex2 the conflict is D vs W (register read vs write), not F vs M. Match the resource to the stages that use it: memory → F & M; register file → D & W.
+LEGv8's real solution is exactly the two fixes: split I-mem/D-mem and a register file that writes in the first half-cycle and reads in the second (formalized in 2.4).
+
+
+
+2.3 Data Hazard
+
+One-line definition: When one instruction needs the result of another instruction to complete (it is dependent on the other instruction).
+
+Visual-first explanation: A relay race where runner 2 cannot start until runner 1 physically hands over the baton. The baton is a register value (X9). Runner 1 (ADD) only puts the baton in the rack (register file) at the very end of their run (Writeback). Runner 2 (SUB) reaches for the baton at their second step (Decode) — so they bounce on the spot (repeated D D D) until the baton appears.
+
+Exact slide details:
+
+
+Defining example (X9 boxed in red on both lines):
+ADD X9, X20, X21 ← writes X9
+SUB X10, X9, X22 ← reads X9 — [PROF NOTE] (red): "→ need the new value of X9 to proceed"
+Baseline trace (sequence: ADD X9,X20,X21 / SUB X10,X9,X23 / ADD X11,X24,X25 / SUB X12,X26,X27 / LDUR X13,[X0,#0]):
+
+ADD X9: F D E M W (W circled red) — [PROF NOTE] (red): "X9's new value will be available after writeback"
+SUB X10: F D D D ✓D E M W — fails decode at cycles 3,4,5 ("Can't decode, needs X9's new value"), succeeds cycle 6 (green ✓) — one full cycle after ADD's W, because the deck's default rule is wait-for-W-to-complete.
+Cascade notes — [PROF NOTE] (blue): "Can't pass to decode. Decode is in use." (ADD X11 stuck repeating F… wait, stuck in F behind the occupied D); (green): "can't fetch. Fetch is under use." (SUB X12 can't even enter).
+Resolution table colors each instruction's recovery: SUB X10 red, ADD X11 blue (F F F F D E M W), SUB X12 green, LDUR black — everything slides right by 3 cycles. Comparison slide marks "ideal →" and "cycles stalled".
+
+
+
+
+
+[PROF NOTE] (p25, red, bottom of slide — a scoping rule for the whole deck): "(all other slides assumes we need to wait for the W stage to complete!)"
+
+Misconceptions / exam traps:
+
+
+The #1 source of off-by-one errors in stall counting: does Decode succeed in the same cycle as W, or the cycle after W? This deck's default = the cycle after (wait for W to complete) → 3 stalls. With the split-cycle register file (2.4) → same cycle → 2 stalls. An exam question will specify (or you must state) which assumption you use.
+A data hazard stalls at Decode (where registers are read), not at Execute.
+The stall is contagious backwards: instructions behind the stalled one stall too, because the stages they need stay occupied.
+
+
+
+2.4 Split-Cycle Register File (write first half, read second half)
+
+One-line definition: Implement the register file so a value written early in a cycle can be read later in the same cycle, letting a dependent Decode overlap the producer's Writeback.
+
+Visual-first explanation: Think of one clock cycle as a single second split into two halves. In the first half-second the finishing instruction drops the baton into the rack (write); in the second half-second the waiting runner grabs it (read). Same second, no collision — the hand-off happens inside one tick.
+
+Exact slide details:
+
+
+Question slide (red "Question"): "What will happen if we implemented our processor so that it can access the new register results in the writeback stage? (No need to wait for writeback stage to complete to access new value)" — [PROF NOTE] (red): "→ Register file access hazard."
+Answer: "We can write in first half of cycle and read in second half of cycle. How will this effect the pipeline?"
+Hand-drawn clock waveform with arrows: blue ↓ at the clock edge = "move to next stage"; red ↑ mid-cycle = "write register". [PROF NOTE] (blue): "makes the design complex though."
+Comparison tables titled (red) "can not read same cycle" vs "can read same cycle":
+
+cannot: SUB X10 = F D D D D E M W (decode succeeds the cycle after W) — [PROF NOTE] (magenta): "we can't decode now. We can read the new value next cycle of writeback."
+can: SUB X10 = F D D D E M W (decode succeeds in W's own cycle, magenta D) — [PROF NOTE] (magenta): "we can decode now, since we can read the value in the same cycle." → saves exactly 1 stall cycle ("ideal" / "cycles stalled" brackets shown).
+
+
+
+
+
+Misconceptions / exam traps:
+
+
+This is a register file design trick, not forwarding. Forwarding grabs values from pipeline registers before they ever reach the register file; this trick only shortens the wait for values that do go through the register file.
+Trap: assuming this eliminates the data-hazard stall. It removes one of the three stall cycles (3 → 2), nothing more.
+
+
+
+2.5 Fix A — Compiler Instruction Scheduling
+
+One-line definition: The compiler reorders instructions so a dependent instruction does not come immediately after its producer, filling the gap with independent work.
+
+Visual-first explanation: Instead of the dependent runner bouncing on the spot, the coach (compiler) re-orders the queue: three unrelated runners go between producer and consumer, so by the time the consumer starts, the baton is already racked. Same instructions, zero wasted cycles — just a different order.
+
+Exact slide details:
+
+
+Title (red): "How to fix the stalling? Ⓐ Compiler can arrange the instructions so that the dependent instruction won't come immediately after."
+[PROF NOTE] (red arrow label): "Compiler Instruction Scheduling". [PROF NOTE] (red, with sad face ∵): "becomes complex especially with longer pipelines."
+Demonstration: the order is changed to ADD X9,X20,X21 / ADD X11,X24,X25 / SUB X12,X26,X27 / LDUR X13,[X0,#0] / SUB X10,X9,X23 — SUB X10 now runs 4 slots later and the table shows a perfect stagger, zero stalls.
+
+
+Misconceptions / exam traps:
+
+
+The compiler must find independent instructions to insert; if none exist, this fix fails (this limitation returns in the control-hazard section, where NOPs become the fallback).
+Software fix → no hardware cost, but it's ISA/pipeline-depth sensitive (the prof's sad-face note).
+
+
+
+2.6 Fix B — Data Forwarding / Bypassing (from EX/MEM)
+
+One-line definition: Add extra hardware so the ALU result is grabbed directly from the pipeline register right after Execute, instead of waiting for it to be written to the register file.
+
+Visual-first explanation: Instead of runner 1 racking the baton and runner 2 fetching it from the rack, runner 1 hands the baton directly over their shoulder the instant they finish step 3 (Execute). A small slide (extra wire + mux) connects station 3's output back to station 3's input, so the value teleports one row down-and-right in the pipeline diagram.
+
+Exact slide details:
+
+
+Title slide (red Ⓑ): "Approach: Don't wait for the result to be written to the register file. Gather the result from ALU."
+"Adding extra hardware to retrieve missing item early is called Data Forwarding / Bypassing" (red).
+Plain-language slide: "We are writing the data we got from ALU to a register. The next instruction reads the value from the register without waiting for the writeback stage to finish."
+Demo pair (X1 circled red in both):
+ADD X1, X2, X3 / SUB X4, X1, X5
+
+without forwarding: SUB = F D D D D E M W (4 D's: 3 fails + success) — [PROF NOTE] (red): "try to decode, can't decode. valid X1 not available", then green ✓ "can decode now, read valid X1 from regFile".
+with forwarding (ALU): SUB = F D E M W — red arrow from ADD's E/M boundary down into SUB's E. [PROF NOTE] (red): "→ read from ALU register"; "not waiting to read from reg file." → zero stalls for back-to-back ALU ops.
+
+
+
+Datapath slide (textbook figure annotated): red title "Data forwarding → from EX/MEM register" — red wire drawn from the EX/MEM pipeline register looping back into a small red mux ("M U X" scribble) in front of the ALU input.
+Textbook timing figure (pg. 290): ADD's EX node connects by a blue line to SUB's EX node; time axis 200/400/600/800/1000 (i.e., 200ps stages).
+Pipeline-walk doodle (blue): stations F|D|E|M|W as vertical bars; cycle list 1.add 2.sub… with "add ↑writes / data is here" at E→M and sub at E circled "uses" — [PROF NOTE] (blue, in quotes): ""don't wait you'll get in execute"" (the forwarded value arrives exactly when SUB reaches Execute).
+
+
+Misconceptions / exam traps:
+
+
+Forwarding delivers to the Execute stage input, not to Decode. The dependent instruction still decodes normally; it just receives the live value at the ALU's front door.
+"Forwarding = no stalls ever" is FALSE — see load-use (2.8).
+Know the source: ALU results forward from the EX/MEM pipeline register.
+
+
+
+2.7 Forwarding from MEM/WB (memory forwarding)
+
+One-line definition: A second forwarding path that grabs a value from the MEM/WB pipeline register — needed for load results and for values whose EX/MEM copy has been overwritten.
+
+Visual-first explanation: The over-the-shoulder hand-off (EX/MEM) only holds the most recent finisher's baton. If another runner finished in between, the older baton has already been pushed one shelf further down the corridor — the MEM/WB shelf. So we add a second slide from that further shelf back to the ALU door. Two shelves, two return slides, one mux choosing.
+
+Exact slide details:
+
+
+Failure case motivating it (X1 circled): ADD X1,X2,X3 / LDUR X6,[X7,#0] / SUB X4,X1,X5 — with only ALU forwarding, SUB still stalls: F D D D E M W. Red ✗ drawn between LDUR's E and the forward path. [PROF NOTE] (red, with angry face): "Can't forward data, data was overwritten by LDUR. :("  (LDUR passed through Execute after ADD, so EX/MEM now holds LDUR's address calculation, not X1.)
+Load case: "Can we use the same idea for Memory stage? (Writing the data to register before writeback stage)" with LDUR X1,[X2,#0] / SUB X4,X1,X5: without forwarding SUB = F D D D ✓D E M W ("X1 is ready" after LDUR's W).
+With data forwarding (Memory): [PROF NOTE] (red): "Data can be acquired from MEM/WB register (After Memory finishes)"; (red, quoted): ""don't wait to decode X1, now you can acquire from mem reg"". Annotated textbook fragment: Data memory → MEM/WB register → mux.
+Combined datapath slide: red title "Data forwarding → from EX/MEM register & from MEM/WB register" — two red wires from the two pipeline registers into the pre-ALU mux.
+[PROF NOTE] (blue, on combined-figure slides): at EX/MEM: "calculated in ALU. written to reg."; at MEM/WB: "next cycle reg data also got transferred" (values march one pipeline register to the right every cycle).
+Stage-walk doodle for ADD/LDUR/SUB (blue): "add ↑writes … ldur ↑overwrites … add ↑writes (didn't read from memory, still X1 data)" → sub at E: "can read from mem reg not ALU reg." — the X1 value survives by riding into MEM/WB even though EX/MEM got overwritten. With both paths: ADD F D E M W / LDUR F D E M W / SUB F D E M W with no stall (value fetched from MEM/WB at SUB's E).
+
+
+Misconceptions / exam traps:
+
+
+Classic exam trap: "ALU forwarding exists, instruction between producer and consumer — does it stall?" Answer: with ONLY EX/MEM forwarding yes (value overwritten); with MEM/WB forwarding too, no — the value moved on, it didn't vanish.
+Values are never "lost" by pipeline progress; they relocate: ALU result lives in EX/MEM for one cycle, then MEM/WB for one cycle, then the register file.
+
+
+
+2.8 Load-Use Hazard (the stall forwarding can't kill)
+
+One-line definition: When an instruction needs a loaded value immediately after the load, one stall cycle is unavoidable even with full forwarding, because the data only exists after the load's Memory stage.
+
+Visual-first explanation: The baton for a load isn't manufactured at station 3 (Execute computes only the address) — it appears at station 4 (Memory). The next instruction's Execute happens at the same time as the load's Memory, so the baton literally does not exist yet when it's needed. Push the consumer one tile right (one bubble) and the MEM/WB slide can now reach its Execute.
+
+Exact slide details:
+
+
+LDUR X1,[X2,#0] / SUB X4,X1,X5 with forwarding: LDUR F D E M W; SUB F D D E M W — one repeated D (one stall), then a red/green arrow from LDUR's M/W boundary into SUB's E (green ✓).
+The same single-stall pattern appears in the capstone example (2.9): ldur X2,[X1,#24] → and X4,X2,X5 = F D D E M W with forwarding.
+
+
+Misconceptions / exam traps:
+
+
+Memorize the with-forwarding stall table: ALU-op → dependent: 0 stalls; LDUR → dependent-next-instruction: 1 stall; LDUR → dependent two instructions later: 0 stalls (MEM/WB forwarding covers it).
+The compiler dodge: move an independent instruction between the load and its user (exactly what 2.9's green table does) → the bubble gets filled with real work.
+
+
+
+2.9 Capstone 5-Instruction Example (everything combined)
+
+One-line definition: A full trace of one code block under four regimes: no forwarding → forwarding → forwarding + same-cycle register read → forwarding + compiler rearrangement.
+
+The code (registers circled on slides: X2 red = produced by ldur; X4 blue = produced by and):
+
+textldur  X2, [X1, #24]
+and   X4, X2, X5
+subi  X5, X11, #2
+orr   X8, X2, X6
+add   X9, X4, X2
+
+Exact traces from the slides:
+
+
+Without data forwarding (wait for W): ldur F D E M W │ and F D D D ✓D E M W (3 stalls — X2 ready after ldur's W) │ subi F F F F D E M W (fetch-blocked behind and's stalled D) │ orr F D E M W │ add F D ✓D E M W (1 stall — X4 from and's W). Green ✓ marks each recovery.
+With data forwarding (ALU & Memory): ldur F D E M→W (red arrow M→and's E) │ and F D D E M W (1 load-use stall) │ subi F F D E M W │ orr F D E M W │ add F D D E M W.
++ "Can read at the same cycle of write for reg file" (blue annotation): same shape but the trailing dependencies tighten — final blue table: subi F F D E M W, orr F D E M W, add F D E M W (add's stall disappears).
++ "with compiler rearrange" (green): order becomes ldur X2 / subi X5 / and X4 / add X9 / orr X8 — green arrows: ldur's M → and's E, and's E → add's E. Perfect stagger, ZERO stalls. (subi, which is independent, fills the load-use bubble.)
+
+
+[PROF NOTE] progression of red table titles, verbatim: "without data forwarding" → "with data forwarding (ALU & Memory)" → "& Can read at the same cycle of write for reg file" (blue) → "& with compiler rearrange" (green).
+
+Misconceptions / exam traps:
+
+
+This is the exam-question template: given code + a set of enabled features, draw the table / count cycles. Practice toggling each feature.
+Note orr X8,X2,X6 never stalls in any regime — by the time it decodes, X2 is old news. Distance kills hazards.
+
+
+
+2.10 Pipeline Registers (IF/ID, ID/EX, EX/MEM, MEM/WB)
+
+One-line definition: The four storage walls between pipeline stages that carry each instruction's data and results forward one stage per cycle.
+
+Visual-first explanation: Between each pair of assembly-line stations stands a hand-over shelf. At every clock tick, every station puts its finished work on the shelf to its right and picks new work from the shelf on its left. The four shelves are named after the stages they sit between. Forwarding (2.6/2.7) is literally wires tapping into shelves 3 and 4.
+
+Exact slide details (textbook figure, pg. 300, annotated):
+
+
+Four blue vertical bars labeled IF/ID, ID/EX, EX/MEM, MEM/WB; red title "Pipeline registers" with red arrows to each.
+[PROF NOTE] (red, under each bar): IF/ID = "Fetch–Decode", ID/EX = "Decode–Execute", EX/MEM = "Execute–Memory", MEM/WB = "memory–writeback".
+Figure contents (printed): PC + mux + "+4" adder, Instruction memory → IF/ID; register file (Read register 1/2, Write register, Write data, Read data 1/2), Sign-extend 32→64, Shift left 2 + Add for branch target → ID/EX; ALU (Zero, ALU result) + pre-ALU mux → EX/MEM; Data memory (Address, Write data, Read data) → MEM/WB → final 1/0 mux back to register Write data.
+
+
+Misconceptions / exam traps:
+
+
+Naming: each register is named between its two stages — there is no "WB/anything" register (results leave the pipeline at WB).
+Forwarding sources are exactly EX/MEM and MEM/WB — never ID/EX (nothing computed yet) and never IF/ID.
+
+
+
+2.11 Control (Branch) Hazard
+
+One-line definition: When we encounter a branch we don't immediately know which instruction to fetch next — and we must also calculate the branch target address.
+
+Visual-first explanation: The conveyor reaches a fork in the track. The switch lever (the comparison, e.g. "is X11 zero?") is only thrown at station 3 (Execute). But new cars must enter the line every cycle — two cycles before we know which fork is correct. Either the line idles (stall), or we guess a fork (prediction) and yank wrong cars off the line if the guess fails (flush).
+
+Exact slide details:
+
+
+"When we encounter a conditional branch (red squiggle underline), we do not know which instruction to fetch immediately."
+cbz X10, #4 — [PROF NOTE] (red): "We first need to check if X10 = 0 or X10 ≠ 0."
+Two-part formal definition — [PROF NOTE] (red brace, verbatim): "these hazards are called control / branch hazards": "i. When we encounter a conditional branch, we do not know which instruction to fetch immediately. ii. When we encounter a branch (both conditional & unconditional) we need to calculate the next instruction's address."
+Running code example (highlights preserved everywhere it reappears):
+
+
+textsubi  X9, X10, X9
+cbz   X11, #2          ← the branch (offset #2)
+add   X10, X10, X11    ← GREEN highlight = sequential next ("not taken" path), ①
+ldur  X8, [X11, #8]    ← BLUE highlight = branch target ("taken" path), ②
+add   X5, X11, XZR
+
+
+[PROF NOTE] (red/green/blue): "fetching cbz → or fetch this one next? (green) / fetch this one next? (blue)"; "We do not know immediately because we haven't compared yet!"
+Address-calculation slide: the hand-drawn single-cycle datapath with the branch path highlighted orange: Sign Extend → Shift Left 2 → adder with PC → PC input mux. Examples written: b #5, cbz X11,#2. (Blue control labels on the sketch: "0:mem 1:alu", RWEn, "0:regdata 1:extdata", DWEn, ALUop, m1–m5 mux tags; green "zero" flag wire from ALU.)
+Stall-on-branch trace: subi F D E M W │ cbz F D E M W │ cycles 3–4 fetch nothing (red/blue dashes in rows) │ after cbz's E resolves (assumed X11=0, branch taken), ldur (target) F at cycle 5, add X5 F at cycle 6. [PROF NOTE] (blue): "couldn't fetch"; (green): "this branch is chosen (assumed X11 = 0)"; (red ✗ over the not-taken mini-table); (red brace under cycles 3–4): "lost 2 cycles".
+
+
+Misconceptions / exam traps:
+
+
+The branch outcome is known after Execute in this design → exactly 2 lost fetch slots (the deck's number; remember it).
+Sub-problem (ii) applies to unconditional branches too — even b #5 needs target = PC + (offset << 2). "Unconditional branches cause no control hazard" is FALSE under this deck's definition.
+cbz X11,#2 offset is in instructions, shifted left 2 to become a byte offset.
+
+
+
+2.12 Control-Hazard Fix ①: Compiler Rearrangement + NOP
+
+One-line definition: The compiler moves non-dependent instructions into the 2-cycle branch shadow; if there aren't enough, it fills the rest with NOPs.
+
+Visual-first explanation: While the switch lever is being decided, the line still moves — so the coach slides two cars that don't care about the fork into those slots. If only one careless car exists, the second slot gets a cardboard car (NOP): it rolls through all 5 stations doing absolutely nothing, just keeping the conveyor shape.
+
+Exact slide details:
+
+
+"How to resolve control hazards? ① Compiler can rearrange the code. (same idea as previous slides) So non dependent instructions can be fetched when waiting." — with an if(){}else{} sketch, blue "?" and green "?" arrows to the two outcomes, and an orange circled block labeled "non dependent instructions".
+[PROF NOTE] (orange): "Compiler rearranges assembly code, so while branch calculates, these instructions can be fetched."
+[PROF NOTE] (red): "But hardware needs to know that control hazards are handled by the compiler, otherwise it will also try to handle."
+[PROF NOTE] (red): "What if we do not have enough non dependent instructions? (Ex: We have 20 stalls but only 5 non dependent instructions)" → "A new instruction called NOP can be added to ISA to fill." NOP = "No operation (does nothing)" → "kind of stalling but in software".
+NOP demo table: subi / cbz / NOP / NOP / ldur / add — the two NOPs (red) flow F D E M W through the pipeline occupying the 2 lost cycles; ldur fetches at cycle 5 exactly as in the stall version, but the hardware never had to detect anything.
+[PROF NOTE] (red): "Instead of NOP it can use Add XZR,XZR,XZR / Sub XZR,XZR,XZR / Addi XZR,XZR,#1 etc. etc." (any instruction writing to XZR is effectively a NOP).
+
+
+Misconceptions / exam traps:
+
+
+NOPs don't save time vs stalling — same 2 cycles lost. The win is simpler hardware (no hazard-detection logic). Exam phrasing: "software stalling".
+XZR is hard-wired zero in LEGv8 → writes to it vanish → free NOP encodings.
+
+
+
+2.13 Control-Hazard Fix ②: Static Branch Prediction
+
+One-line definition: Guess every branch the same way — always taken or always not taken — fetch along the guess immediately, verify after Execute, and flush if wrong.
+
+Visual-first explanation: Instead of idling at the fork, the line commits to one rail every time (say, always-left). Cars keep entering at full speed. At station 3 the lever finally reveals the truth: if the guess matched — TAA DAA, nothing was lost. If not, the two cars that entered on the wrong rail get stamped INVALID, lifted off the line (their slots become empty bubbles), and the correct rail's first car enters next cycle.
+
+Exact slide details:
+
+
+Lead-in — [PROF NOTE]: "First approach is a little bit challenging so… ② Branch Prediction: Predicting if the branch instruction is going to be taken or not, prior the execute stage." (Will Smith "TAA DAA" presenting-meme image on the slide.)
+"Ⓐ Static Branch Prediction: Assumes branches are always taken (blue underline) or assumes branches are always not taken (green double underline)."
+Direction demo: cbz X11,#2 taken → JUMP forward 2 (blue ①②); cbnz X12,#-3 taken → JUMP backward 3 (blue ③②①). Not-taken side (green): "DON'T JUMP! Continue to next instruction" for both.
+ALWAYS TAKEN, prediction correct (blue title; red caption "IF OUR PREDICTION WAS CORRECT CONTINUE ON…"): subi F D E M W │ cbz X11,#2 F D E(red ✓)M W │ ldur (target) fetched immediately at cycle 3: F D E M… │ add X5 F D E… │ cbz X12,#-3 F D │ add X10 F. [PROF NOTE] (blue): "wait for execution step to complete again to see if the prediction was correct" (every branch re-verifies). Code margin: add X10 crossed out (skipped), ldur highlighted, arrow "branch (branch taken)". Zero lost cycles when right.
+ALWAYS TAKEN, prediction incorrect (red caption "IF OUR PREDICTION WAS INCORRECT "FLUSH" → discard instructions"): cbz's E gets a red ✗; the two wrong-path instructions (ldur F D, add X5 F — red-highlighted rows) → [PROF NOTE] (red): "mark as INVALID". Next slide: their cells become dashes (— — —) = bubbles; cbz continues M W; the correct sequential path (add X10,X10,X11 green "CORRECT ONE") fetches at cycle 5, then ldur follows. 2 cycles lost on a wrong guess — same price as stalling.
+ALWAYS NOT TAKEN (green title): fetch sequential add X10 (F D) and ldur (F) right behind cbz. [PROF NOTE] (red): "after execute finishes we'll see if the prediction was correct" → correct: "continue" (green ↓ in code margin). Incorrect (branch actually taken): red ✗ at E, the two green-path instructions get red-highlighted → flush to dashes → fetch the true target ldur X8,[X11,#8] (blue) at cycle 5 + addi X5,X11,XZR. (Code margin: blue arc to ldur labeled "CORRECT".)
+Loop accuracy example (final slide):
+
+
+textfor (i = 0; i <= 5; i++) { ... }
+
+[PROF NOTE]: "assume the assembly code generated functions as: If i ≤ 5 branch (branch taken = T) (red) / If i > 5 do not branch (branch not taken = NT) (blue)."
+Iteration check sequence written out: i=0&i≤5 → T, i=1 → T, i=2 → T, i=3 → T, i=4 → T, i=5 → T, i=6&i≰5 → NT → pattern T T T T T T NT (6 T red, 1 NT blue).
+[PROF NOTE] (orange): "Always Taken Static Predictor → 6/7 Correct" ← "Better for this example"; (magenta): "Always Not Taken Static Predictor → 1/7 Correct".
+
+Misconceptions / exam traps:
+
+
+"Prediction removes the branch penalty" — only when correct. Wrong guess = flush = the same 2 cycles as stalling. Expected cost = miss-rate × 2.
+Flush ≠ stall: a stall delays known-good instructions; a flush destroys wrong-path instructions (turns them into bubbles after they've already used stages).
+Loops end with exactly one NT (the exit test) → backward/loop branches make always-taken great and always-not-taken terrible — exactly the 6/7 vs 1/7 numbers. Generalize: N-iteration loop → always-taken accuracy N/(N+1).
+The prediction happens before Execute; verification happens after Execute.
+
+
+
+(Sections 3–7 continue below)
+
+3. VISUALIZATION SPEC
+
+Conventions for the Flutter dev: pipeline stages render as a fixed row of 5 chips [F][D][E][M][W] with a consistent palette — F=indigo, D=teal, E=amber, M=purple, W=green. Each instruction is a horizontal lane; cycles are columns. A "bubble"/stall renders as a greyed repeated chip with a small ↻ icon. Use 250ms ease-in-out for any cell fill, 400ms for a flush "dissolve". Tapping the Next Cycle button advances the global cycle counter by 1 and fills exactly one chip per active lane.
+
+
+3.1 Hazard Taxonomy (intro screen)
+
+
+Three large tappable cards stacked: ① Structural, ② Data, ③ Control. Each card has a one-line definition and a tiny looping animation thumbnail (structural = two arrows colliding on one box; data = baton hand-off; control = a forking track).
+A persistent "WE WAIT / STALL" toggle chip at the top: when ON, every concept screen shows the naive stall version; when OFF it shows the optimized version. This encodes the professor's "we can just wait, but we don't want to" framing as the app's central interactive lever.
+Tap a card → push that concept's screen.
+
+
+3.2 Structural Hazard — Single Memory
+
+
+Top half: one rounded box labeled "Data / Instruction Memory". A single red bus line runs from it to a fork with two endpoints: "instruction" and "data". Only one endpoint can glow at a time (mutual exclusion is the whole point).
+Bottom half: the 5-instruction cycle table (ADD X9 / SUB X10 / ADD X11 / SUB X12 / LDUR X13). User taps Next Cycle to advance.
+When ADD X9 enters M and SUB X12 wants F in the same column, the memory box flashes red, SUB X12's F chip shakes (translateX ±4px, 3 times) and stamps a greyed retry. A floating red toast reads "Memory in use by ADD X9 — can't fetch". This repeats 3 times; on the 4th, a green ✓ pops and F fills solid.
+A side counter "Cycles lost: N" increments per failed fetch. A FIX button labeled "Use separate memories" — tapping splits the box into two (I-Mem / D-Mem with a satisfying slide-apart), then re-runs the trace with zero conflicts and the counter resetting to 0.
+
+
+3.3 Structural Hazard — Register File
+
+
+Same layout but the resource box is "Register File" with a tiny toggle showing RegOp 0:read / 1:write. The conflict column is where one instruction's W meets another's D.
+The box flashes when D and W collide; toast reads "Writeback in process — can't decode". Same 3-retry → green ✓ pattern.
+FIX button: "Read + write in one cycle" — tapping animates the box splitting a clock pulse into two halves (write-half lights first, read-half second), and the dependent D now succeeds one column earlier.
+
+
+3.4 Data Hazard — baton relay
+
+
+Two lanes: producer ADD X9,X20,X21 and consumer SUB X10,X9,X22. Render X9 as a small glowing token chip.
+As ADD advances, the X9 token sits "unfinished" (hollow outline) until ADD reaches W, where it fills solid and drops into a register-file rack icon.
+Consumer's D chip pulses and stamps greyed retries each cycle the token is still hollow; a red label "needs X9" hovers over it. When the token fills (ADD's W), consumer D goes green ✓ and proceeds.
+Toggle "Same-cycle reg read": when ON, the token becomes grabbable in the same column as W (write-half→read-half visual), shaving exactly one retry. Show a live "Stalls: 3 → 2" delta badge.
+
+
+3.5 Data Forwarding (ALU, EX/MEM)
+
+
+Show the pipeline datapath simplified to: register file → mux → ALU → EX/MEM register (highlighted bar) → onward. Draw a dormant grey wire looping from EX/MEM's output back to the pre-ALU mux.
+Two lanes ADD X1 / SUB X4 (X1 the dependency). With forwarding OFF, SUB stalls (greyed D retries). User taps "Enable forwarding" → the grey loop wire animates to solid red, a value packet slides along it from ADD's E/M boundary into SUB's E chip, which then fills with a "⚡ forwarded" badge instead of stalling. Stall counter snaps 3 → 0.
+Tap the EX/MEM bar to show tooltip: "ALU result lives here for 1 cycle — grab it before it's written back."
+
+
+3.6 Forwarding from MEM/WB + Load-Use
+
+
+Extend the datapath with the MEM/WB register bar and a second loop wire (from MEM/WB to the mux).
+Scenario A ("overwrite"): ADD X1 / LDUR X6 / SUB X4. Animate the X1 packet sitting in EX/MEM, then getting shoved out and replaced by LDUR's packet (EX/MEM bar briefly shows "LDUR" overwriting "X1"). The EX/MEM→ALU wire turns red-✗. Then show X1 has ridden into MEM/WB — the second wire lights and delivers X1 from there. Caption: "values relocate, they don't vanish."
+Scenario B (load-use): LDUR X1 / SUB X4 back-to-back. Even with both wires lit, SUB's E lands in the same column as LDUR's M (data not ready until end of M). Show exactly one mandatory bubble, then a packet from MEM/WB→E. Persistent note: "Forwarding can't fully erase a load-use stall: minimum 1 bubble."
+
+
+3.7 Capstone Trace Player
+
+
+The 5-instruction block (ldur X2 / and X4 / subi / orr / add). Four-position segmented control at top: [No FWD] [FWD] [FWD + same-cycle] [+ Reorder]. Sliding the control re-runs the same code and morphs the table (animate cells in/out) so the learner sees the stall count collapse: e.g. show a big live "Total cycles: 13 → 11 → 10 → 9" (illustrative — compute from the actual filled table).
+In +Reorder mode, animate subi physically sliding up between ldur and and to fill the load-use bubble; bubbles dissolve to green.
+
+
+3.8 Pipeline Registers reference
+
+
+Static annotated datapath: 4 blue vertical bars IF/ID, ID/EX, EX/MEM, MEM/WB. Tapping a bar highlights the two stages it sits between and shows its name + role ("Fetch–Decode", etc.). Forwarding screens deep-link here ("where does the value live?").
+
+
+3.9 Control Hazard — the fork
+
+
+A track that splits after the cbz lane into a green "not taken / sequential" rail (add X10) and a blue "taken / target" rail (ldur X8). A lever icon sits at the E column labeled "decision made here".
+Stall mode: after cbz's F D, the next two fetch columns show empty dashed bubbles; a red brace labels them "lost 2 cycles". The lever throws at E, then the chosen rail's instruction fetches.
+Address calc sub-view: mini datapath with Sign-Extend → Shift-Left-2 → adder(+PC) → PC-mux, the branch path highlighted orange; a stepper shows offset #2 becoming (2<<2) added to PC.
+
+
+3.10 Branch Prediction Simulator (the centerpiece game)
+
+
+Top: a predictor switch with two positions: "Always Taken" / "Always Not Taken".
+A branch stream renders as a row of upcoming branch tokens. For each branch the app fetches along the predicted rail immediately (chips fill at full speed, no bubble).
+At each branch's E column the truth is revealed: if it matches the prediction → green ✓ pulse, play forward uninterrupted ("TAA DAA"). If mismatch → red ✗ at E, the 2 wrong-path lanes flash red, get an INVALID stamp, then dissolve into bubbles (flush animation), and the correct rail fetches next column. A "cycles lost" tally ticks +2 on each flush.
+Loop mini-game: load the for(i=0;i<=5;i++) example. Show the branch-outcome ticker T T T T T T NT. Let the user pick a predictor, then step through; the app tallies correct/total and reveals Always-Taken 6/7 vs Always-Not-Taken 1/7 as score cards. Award stars for choosing the better predictor before running.
+
+
+3.11 NOP / Compiler Rearrange screen
+
+
+Branch lane followed by two empty shadow slots. A tray of draggable instruction tiles (some marked "independent", some "dependent"). User drags independent tiles into the shadow slots → they flow through normally. If the user runs out of independent tiles, offer a grey NOP tile (or ADD XZR,XZR,XZR) to fill the rest; show the toast "software stall — same 2 cycles, simpler hardware."
+
+
+
+4. QUIZ BANK
+
+json[
+  {"q": "A hazard is best defined as:", "options": ["A pipeline stage that doesn't exist", "A situation where the next instruction can't execute in the next clock cycle", "An instruction that uses too much power", "A branch that is always taken"], "answer": 1, "difficulty": 1, "concept": "Pipeline Hazard", "explanation": "Verbatim slide definition: sometimes the next instruction cannot execute in the next clock cycle — these are hazards."},
+  {"q": "Which fix works for EVERY type of hazard, even if it's the slowest?", "options": ["Data forwarding", "Branch prediction", "Stalling / waiting", "Separate memories"], "answer": 2, "difficulty": 1, "concept": "Pipeline Hazard", "explanation": "The professor's framing: 'we can just wait/stall' is universal — but we seek better fixes because waiting is slow."},
+  {"q": "In the single-memory structural hazard, which two pipeline stages conflict?", "options": ["Decode & Writeback", "Fetch & Memory", "Execute & Memory", "Fetch & Decode"], "answer": 1, "difficulty": 1, "concept": "Structural Hazard", "explanation": "One shared memory means Fetch (instruction read) and Memory (data access) can't both use it in the same cycle."},
+  {"q": "The register-file structural hazard causes a conflict between which two stages?", "options": ["Fetch & Memory", "Decode & Writeback", "Execute & Writeback", "Decode & Execute"], "answer": 1, "difficulty": 2, "concept": "Structural Hazard", "explanation": "Decode reads the register file; Writeback writes it. A single-ported file can't do both in one cycle."},
+  {"q": "What is the slide's stated FIX for the single-memory structural hazard?", "options": ["Add forwarding wires", "Use separate instruction and data memories", "Predict the branch", "Insert NOPs"], "answer": 1, "difficulty": 1, "concept": "Structural Hazard", "explanation": "Separate resources: split instruction memory and data memory so fetch and memory access never compete."},
+  {"q": "A data hazard causes an instruction to stall at which stage, where it tries to read its operands?", "options": ["Fetch", "Decode", "Execute", "Writeback"], "answer": 1, "difficulty": 2, "concept": "Data Hazard", "explanation": "Operands are read at Decode; if a needed register value isn't ready, Decode repeats."},
+  {"q": "Under the deck's default assumption (wait for W to complete), how many cycles does SUB X10 stall when it immediately follows ADD X9 that produces X9?", "options": ["1", "2", "3", "0"], "answer": 2, "difficulty": 2, "concept": "Data Hazard", "explanation": "Decode repeats at cycles 3,4,5 and succeeds at cycle 6 — three stall cycles — because the value is only usable after W completes."},
+  {"q": "Implementing the register file to write in the first half-cycle and read in the second half-cycle does what to the back-to-back data-hazard stall?", "options": ["Eliminates it entirely", "Reduces it from 3 cycles to 2", "Increases it by 1", "Has no effect"], "answer": 1, "difficulty": 2, "concept": "Split-Cycle Register File", "explanation": "Same-cycle read of a just-written value lets Decode succeed in W's own cycle, saving exactly one stall (3→2)."},
+  {"q": "Adding extra hardware to grab a result early (e.g., straight from the ALU) instead of waiting for writeback is called:", "options": ["Stalling", "Data forwarding / bypassing", "Branch prediction", "Compiler scheduling"], "answer": 1, "difficulty": 1, "concept": "Data Forwarding", "explanation": "Forwarding/bypassing routes a freshly computed value to where it's needed before it's written to the register file."},
+  {"q": "ALU-result forwarding takes the value from which pipeline register?", "options": ["IF/ID", "ID/EX", "EX/MEM", "MEM/WB"], "answer": 2, "difficulty": 2, "concept": "Data Forwarding", "explanation": "The ALU result is latched in EX/MEM for one cycle; forwarding taps it there."},
+  {"q": "ADD X1,... then LDUR X6,... then SUB X4,X1,X5. With ONLY EX/MEM (ALU) forwarding, why does SUB still stall?", "options": ["X1 was never computed", "LDUR overwrote the EX/MEM register, so X1 isn't there anymore", "SUB doesn't need X1", "The register file is full"], "answer": 1, "difficulty": 3, "concept": "Forwarding from MEM/WB", "explanation": "LDUR passed through Execute after ADD, overwriting EX/MEM. X1 now lives in MEM/WB, so a MEM/WB forwarding path is needed."},
+  {"q": "With FULL forwarding, an LDUR immediately followed by an instruction that uses the loaded value causes how many stall cycles?", "options": ["0", "1", "2", "3"], "answer": 1, "difficulty": 3, "concept": "Load-Use Hazard", "explanation": "Load data is only available after Memory; the dependent instruction's Execute coincides with the load's Memory, forcing one unavoidable bubble."},
+  {"q": "What does the NOP instruction do, and why is it used after a branch?", "options": ["Doubles the clock speed; used to save power", "Nothing; used to fill stall slots in software", "Predicts the branch; used to avoid flushing", "Forwards data; used to skip Decode"], "answer": 1, "difficulty": 2, "concept": "Compiler Rearrangement + NOP", "explanation": "NOP = no operation; it occupies a slot doing nothing — 'software stalling' when no independent instruction is available."},
+  {"q": "In LEGv8, which of these acts as an effective NOP?", "options": ["ADD XZR, XZR, XZR", "LDUR X1, [X2,#0]", "CBZ X1, #4", "B #5"], "answer": 0, "difficulty": 2, "concept": "Compiler Rearrangement + NOP", "explanation": "XZR is hard-wired zero; writing the result to XZR discards it, so the instruction does nothing useful."},
+  {"q": "When a branch is resolved at Execute and prediction is OFF (stall on branch), how many fetch cycles are lost?", "options": ["0", "1", "2", "4"], "answer": 2, "difficulty": 2, "concept": "Control Hazard", "explanation": "The branch outcome is known after Execute, so two fetch slots are wasted while waiting."},
+  {"q": "On a branch misprediction, the wrong-path instructions are marked INVALID and discarded. This is called:", "options": ["Forwarding", "Flushing", "Stalling", "Bypassing"], "answer": 1, "difficulty": 1, "concept": "Static Branch Prediction", "explanation": "A flush discards the speculatively-fetched wrong-path instructions, turning them into bubbles."},
+  {"q": "For the loop `for(i=0;i<=5;i++)` whose branch outcomes are T T T T T T NT, the Always-Taken static predictor scores:", "options": ["1/7 correct", "6/7 correct", "7/7 correct", "0/7 correct"], "answer": 1, "difficulty": 2, "concept": "Static Branch Prediction", "explanation": "Six iterations take the branch (T) and only the exit test is NT, so always-taken is right 6 of 7 times."},
+  {"q": "For that same T T T T T T NT pattern, the Always-Not-Taken predictor scores:", "options": ["6/7 correct", "1/7 correct", "3/7 correct", "7/7 correct"], "answer": 1, "difficulty": 2, "concept": "Static Branch Prediction", "explanation": "Only the final NT (loop exit) matches an always-not-taken guess: 1 of 7."},
+  {"q": "TRACE: ADD X1,X2,X3 then SUB X4,X1,X5, WITH ALU forwarding. What stage is SUB in during the cycle that ADD is in M? (cycles: ADD F D E M W)", "options": ["Fetch", "Decode", "Execute", "Stalled bubble"], "answer": 2, "difficulty": 3, "concept": "Data Forwarding", "explanation": "With forwarding SUB runs F D E M W one step behind, so when ADD is in M, SUB is in E — receiving the forwarded value, no stall."},
+  {"q": "TRACE: Always-Taken predictor. A branch's prediction turns out WRONG. Counting from the branch's Execute cycle, how many instructions must be flushed?", "options": ["0", "1", "2", "5"], "answer": 2, "difficulty": 3, "concept": "Static Branch Prediction", "explanation": "Two wrong-path instructions were speculatively fetched (F and F/D) before Execute revealed the misprediction; both are flushed — the same 2-cycle penalty as stalling."},
+  {"q": "TRACE: code block ldur X2,[X1,#24] / and X4,X2,X5 / subi X5,X11,#2 / orr X8,X2,X6 / add X9,X4,X2 with FULL forwarding. Which instruction suffers the load-use stall?", "options": ["ldur", "and (uses X2 right after the load)", "subi", "orr"], "answer": 1, "difficulty": 3, "concept": "Capstone / Load-Use", "explanation": "`and` needs X2 immediately after the load, so it eats the single unavoidable load-use bubble; `orr` uses X2 later and doesn't stall."},
+  {"q": "Why does `orr X8,X2,X6` never stall in the capstone example regardless of forwarding?", "options": ["It doesn't use X2", "By the time it decodes, X2 has long been available", "It is a NOP", "It executes before ldur"], "answer": 1, "difficulty": 3, "concept": "Capstone / Data Hazard", "explanation": "Distance kills hazards: orr is several instructions after the ldur, so X2 is ready well before orr needs it."},
+  {"q": "Sub-problem (ii) of control hazards — needing to CALCULATE the next address — applies to:", "options": ["Only conditional branches", "Only unconditional branches", "Both conditional and unconditional branches", "Neither; addresses are never calculated"], "answer": 2, "difficulty": 2, "concept": "Control Hazard", "explanation": "The slide explicitly notes the address calculation is needed for both conditional and unconditional branches."},
+  {"q": "The branch target for `cbz X11,#2` is computed using which datapath elements (highlighted orange on the slide)?", "options": ["Data memory and the register file", "Sign-extend, shift-left-2, and an adder with PC", "The ALU zero flag only", "Instruction memory and a NOP"], "answer": 1, "difficulty": 3, "concept": "Control Hazard / address calc", "explanation": "The immediate is sign-extended, shifted left 2, and added to PC to form the target address."}
+]
+
+
+5. FLASHCARDS
+
+json[
+  {"front": "Pipeline hazard", "back": "A situation where the next instruction cannot execute in the next clock cycle.", "concept": "Pipeline Hazard"},
+  {"front": "The 5 pipeline stages (LEGv8)", "back": "F-Fetch, D-Decode, E-Execute, M-Memory, W-Writeback.", "concept": "Pipeline"},
+  {"front": "Universal (but slowest) fix for any hazard", "back": "Stall / wait.", "concept": "Pipeline Hazard"},
+  {"front": "Structural hazard", "back": "Instructions want to use the same hardware resource in the same cycle, and the hardware can't support it.", "concept": "Structural Hazard"},
+  {"front": "Single shared memory conflict", "back": "Fetch and Memory stages can't be used in the same cycle (one bus to instruction OR data).", "concept": "Structural Hazard"},
+  {"front": "Single-ported register file conflict", "back": "Decode (read) and Writeback (write) can't happen in the same cycle.", "concept": "Structural Hazard"},
+  {"front": "Fix: structural hazard (memory)", "back": "Use separate instruction and data memories (separate resources).", "concept": "Structural Hazard"},
+  {"front": "Fix: structural hazard (register file)", "back": "Design the register file to be read AND written in the same cycle.", "concept": "Structural Hazard"},
+  {"front": "Data hazard", "back": "One instruction needs the result of another instruction that hasn't completed yet (a dependency).", "concept": "Data Hazard"},
+  {"front": "Where does a data hazard stall?", "back": "At Decode, where the instruction tries to read its register operands.", "concept": "Data Hazard"},
+  {"front": "Write-first-half / read-second-half register file", "back": "Lets a value written early in a cycle be read later in the same cycle; saves 1 stall cycle (3→2).", "concept": "Split-Cycle Register File"},
+  {"front": "Data forwarding / bypassing", "back": "Extra hardware that routes a result (e.g., from the ALU) to a later instruction before it's written to the register file.", "concept": "Data Forwarding"},
+  {"front": "ALU forwarding source", "back": "The EX/MEM pipeline register.", "concept": "Data Forwarding"},
+  {"front": "Memory/load forwarding source", "back": "The MEM/WB pipeline register (after Memory finishes).", "concept": "Forwarding from MEM/WB"},
+  {"front": "Why a value may need MEM/WB forwarding instead of EX/MEM", "back": "A later instruction (e.g., LDUR) overwrote the EX/MEM register; the value has moved on to MEM/WB.", "concept": "Forwarding from MEM/WB"},
+  {"front": "Load-use hazard", "back": "Using a loaded value in the very next instruction costs 1 stall even with full forwarding (data ready only after Memory).", "concept": "Load-Use Hazard"},
+  {"front": "Pipeline registers (4)", "back": "IF/ID, ID/EX, EX/MEM, MEM/WB — storage walls between stages, carrying data forward each cycle.", "concept": "Pipeline Registers"},
+  {"front": "Control / branch hazard", "back": "On a branch we don't know which instruction to fetch next, and must calculate the target address (conditional & unconditional).", "concept": "Control Hazard"},
+  {"front": "Branch resolved at Execute — penalty if stalling", "back": "2 lost fetch cycles.", "concept": "Control Hazard"},
+  {"front": "Control-hazard fix #1", "back": "Compiler rearranges non-dependent instructions into the branch shadow; fills leftover slots with NOPs.", "concept": "Compiler Rearrangement + NOP"},
+  {"front": "NOP", "back": "No-operation instruction; does nothing; used to fill stall slots — 'stalling in software'. e.g. ADD XZR,XZR,XZR.", "concept": "Compiler Rearrangement + NOP"},
+  {"front": "Branch prediction", "back": "Guessing whether a branch is taken or not BEFORE the Execute stage, so fetching can continue.", "concept": "Static Branch Prediction"},
+  {"front": "Static branch prediction", "back": "Always-taken OR always-not-taken — a fixed guess for every branch.", "concept": "Static Branch Prediction"},
+  {"front": "Flush", "back": "On a misprediction, mark the wrong-path instructions INVALID and discard them (they become bubbles).", "concept": "Static Branch Prediction"},
+  {"front": "Cost of a correct prediction vs a wrong one", "back": "Correct = 0 lost cycles; wrong = flush = 2 lost cycles (same as stalling).", "concept": "Static Branch Prediction"},
+  {"front": "Loop T T T T T T NT — predictor accuracy", "back": "Always-Taken 6/7; Always-Not-Taken 1/7. Loops favor always-taken.", "concept": "Static Branch Prediction"}
+]
+
+
+6. BOSS BATTLE
+
+Title: "Drain the Pipeline" — one code block, six sequential stages. Each stage unlocks the next. Correct answer + explanation given per stage.
+
+The code under attack:
+
+textLDUR X2, [X1, #24]
+AND  X4, X2, X5
+SUBI X5, X11, #2
+ORR  X8, X2, X6
+ADD  X9, X4, X2
+CBZ  X9, #2
+
+
+Stage 1 — Spot the hazard type.
+Q: AND X4,X2,X5 immediately follows LDUR X2,.... What kind of hazard is this?
+✅ Answer: A data hazard — specifically a load-use hazard (AND needs X2, which LDUR produces).
+Explanation: AND reads X2 at Decode, but LDUR's value only exists after its Memory stage.
+
+Stage 2 — Count the naive stall.
+Q: With NO forwarding and the "wait for W to complete" rule, how many cycles does AND stall waiting for X2?
+✅ Answer: 3 cycles (Decode repeats until the cycle after LDUR's Writeback).
+Explanation: Same pattern as ADD→SUB earlier — three repeated Decodes, success on the 4th.
+
+Stage 3 — Apply forwarding.
+Q: Turn on full forwarding (EX/MEM + MEM/WB). Now how many cycles does AND stall?
+✅ Answer: 1 cycle (the irreducible load-use bubble).
+Explanation: Load data comes from MEM/WB after Memory; AND's Execute lines up with LDUR's Memory, so exactly one bubble remains.
+
+Stage 4 — Kill the last stall in software.
+Q: Without adding hardware, how can the compiler remove that remaining 1-cycle load-use bubble?
+✅ Answer: Move an independent instruction between LDUR and AND — SUBI X5,X11,#2 is independent of X2, so reorder to LDUR / SUBI / AND / ORR / ADD.
+Explanation: SUBI fills the bubble with useful work; AND now decodes a cycle later, by which time X2 is forwardable. Zero stalls.
+
+Stage 5 — The branch arrives.
+Q: CBZ X9,#2 depends on ADD X9,X4,X2 and is also a control hazard. If we STALL on the branch (no prediction), how many fetch cycles are lost after the branch resolves at Execute?
+✅ Answer: 2 cycles.
+Explanation: The outcome is known only after Execute; two fetch slots are wasted.
+
+Stage 6 — Predict and pay the price.
+Q: We use an Always-Taken predictor. Suppose X9 turns out to be NON-zero, so CBZ is actually not taken — prediction wrong. What happens, and what's the penalty?
+✅ Answer: Flush the two speculatively-fetched (taken-path) instructions — mark them INVALID, turn them into bubbles — then fetch the correct sequential instruction. Penalty = 2 cycles (same as stalling, because we guessed wrong).
+Explanation: Prediction only pays off when correct; a wrong guess costs the full branch penalty. (If X9 had been zero → branch taken → prediction correct → 0 lost cycles.)
+
+Victory text: "Pipeline drained! You combined load-use forwarding, compiler scheduling, and branch prediction — exactly the toolkit from this week."
+
+
+7. CONNECTIONS
+
+
+Structural hazards → the LEGv8 datapath design. The two fixes (separate I-mem/D-mem; dual-access register file) are why the standard pipelined datapath looks the way it does. This connects backward to the single-cycle/datapath week and forward to any "modify the datapath" exam question.
+Split-cycle register file → data hazards. The "write first half / read second half" trick is a partial data-hazard fix (3→2 stalls), bridging the structural-hazard register-file fix and the data-hazard section — the same hardware idea solves part of two problems.
+Data hazards → forwarding → pipeline registers. Forwarding only makes sense once you know values live transiently in EX/MEM and MEM/WB. The pipeline-registers reference (pg. 300) is the shared substrate for the whole forwarding discussion.
+Forwarding → load-use → compiler scheduling. Forwarding removes most data stalls; the load-use case is the residue forwarding can't fix; compiler scheduling (moving an independent instruction) is the software patch — the exact same reordering idea reused for control hazards.
+Compiler scheduling appears in BOTH data and control hazards. "Rearrange non-dependent instructions" is introduced for data hazards and reused verbatim for branch shadows — a single mental model the professor explicitly cross-references ("same idea as previous slides").
+NOP ↔ stalling. NOP is "stalling in software" — it ties the hardware stall concept to the ISA, and to XZR (hard-wired zero), connecting to register conventions.
+Control hazards → branch prediction → (next week) dynamic prediction. This deck stops at static prediction. The natural continuation is dynamic predictors (1-bit, 2-bit saturating counters, branch history tables) — the loop accuracy example (6/7 vs 1/7) motivates why smarter, history-based prediction is worth the hardware.
+Branch resolved-at-Execute → deeper pipelines. The "2 lost cycles" figure depends on resolving at Execute; deeper pipelines resolve later → bigger penalties → stronger motivation for prediction (the professor's "becomes complex especially with longer pipelines" note).
+"Cycles stalled" / "ideal" labels → CPI & performance. Every comparison table is implicitly teaching CPI > 1 due to hazards, linking this week to pipeline performance/speedup analysis.
+Flush/INVALID → exceptions & speculation (later). The mechanism of marking instructions invalid and discarding them is the same machinery later reused for precise exceptions and speculative execution.
+
+
+
+UNREADABLE PAGES
+
+None. All 110 pages were legible. Pages within each progressive-build sequence that only added one cell to the previous slide were read at their final (fullest) state per the agreed skip-duplicates approach; no unique content was skipped.

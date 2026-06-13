@@ -1,0 +1,11 @@
+{
+  "id": "operating-systems",
+  "title": "Operating Systems",
+  "subtitle": "Add your own course here",
+  "description": "This is a placeholder example. To add a real subject: copy this folder, rename it, edit this subject.json, set status to \"available\", and drop your unit_N.md (or week_N.md / chapter_N.md) files alongside it. Then rerun: dart run tool/convert_content.dart",
+  "unitLabel": "Chapter",
+  "accent": "#FFB74D",
+  "icon": "school",
+  "status": "coming-soon",
+  "format": "archquest-weekly"
+}

@@ -1,0 +1,28 @@
+name: archquest
+description: "Gamified Computer Architecture study app (Patterson & Hennessy, LEGv8/ARMv8)."
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_markdown: ^0.7.7+1
+  provider: ^6.1.5+1
+  shared_preferences: ^2.5.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    # The manifest lives directly in assets/data/; each subject's converted
+    # units live in their own subfolder, which Flutter needs listed explicitly.
+    # Add a line here when you add a new subject folder.
+    - assets/data/
+    - assets/data/computer-architecture/

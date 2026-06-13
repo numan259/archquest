@@ -1,0 +1,384 @@
+{
+  "unitNumber": 12,
+  "title": "Virtual Memory and Input/Output (I/O) Systems",
+  "overview": "* **Topic Title:** Virtual Memory and Input/Output (I/O) Systems\n* **Subtopics Covered:** Virtual Memory mapping, Address Translation, Page Tables, Translation Lookaside Buffers (TLBs), I/O Systems, Bus Arbitration (Daisy Chaining vs. Central), DMA, Polling, and Interrupts.\n* **Course Narrative:** This week bridges the gap between processor execution and the outside world. Building on the cache memory hierarchy, it explains how secondary storage acts as an illusion of infinite main memory (Virtual Memory) and how the processor talks to peripheral devices (I/O).\n* \n**Textbook References:** Page 510 , Page 511 , Page 520 , Page 521.\n\n\n\n---",
+  "textbookRefs": [
+    "Page 510",
+    "Page 511",
+    "Page 520",
+    "Page 521"
+  ],
+  "concepts": [
+    {
+      "id": "c1",
+      "name": "Virtual Memory Rationale",
+      "definition": "Using hard disks to increase the utilized memory space.",
+      "explanation": "Visual Explanation: Think of Main Memory as your physical desk and the Hard Drive as a massive filing cabinet. When your desk is full, you swap documents between the desk and the cabinet.\n\nMain memory sizes differ from system to system. Systems may not have enough main memory for combined programs. Hard disks are slower but cheaper and bigger than HDDs.",
+      "profNotes": [
+        "\"THEY SAY VIRTUAL MEMORY ISNT REAL MEMORY BUT MAYBE THE REAL MEMORY WAS VIRTUAL. DEEP THOUGHTS WITH THE DEEP\"."
+      ],
+      "examTraps": [
+        "Virtual memory does not boost performance; it is strictly needed for writing code to different spec systems and expanding capacity."
+      ],
+      "visualizationSpec": "Virtual to Physical Translation Animation\n\n* **Screen Elements:** Two vertical stacks of blocks representing \"Virtual Memory\" (left) and \"Physical Memory\" (right). A small register block labeled \"Page Table Register\".\n* **Interaction:** User inputs a 32-bit hex address.\n* **Animation:** Address splits visually into \"Page #\" and \"Offset\". The Page # flies into the Page Table Register to find a match. A line draws from the left stack, through the table, landing on a block in the right stack.\n* **State Change:** The physical block highlights green. The 12-bit offset slides over to attach to the new physical page number, forming the final address."
+    },
+    {
+      "id": "c2",
+      "name": "Address Translation & Pages",
+      "definition": "The OS and hardware mapping virtual addresses from compiled code into physical addresses in main memory.",
+      "explanation": "Visual Explanation: A decoder ring. The program asks for a virtual location (fake address), and the processor spins the ring to find the actual physical memory slot.\n\nEach program has its own address space. Virtual memory is divided into Virtual Pages, and Physical memory into Physical Pages. Page size is generally 4KB. Address translation occurs inside the processor.",
+      "profNotes": [
+        "\"Compiler is giving the virtual address to the processor not the physical address.\""
+      ],
+      "examTraps": [
+        "The offset within a page never changes during translation. A 12-bit offset defines the exact byte in a 4KB page ($4 \\times 2^{10}$ Bytes)."
+      ],
+      "visualizationSpec": ""
+    },
+    {
+      "id": "c3",
+      "name": "The Page Table",
+      "definition": "A data structure in main memory that tracks which virtual page maps to which physical page.",
+      "explanation": "Visual Explanation: A massive hotel registry book. You look up a guest's name (virtual page) to find their room number (physical page).\n\nSince the table is large, it is stored in main memory. The OS manages it. A Page Table Register tells the OS where this table is located.",
+      "profNotes": [
+        "\"This means a processor using virtual memory uses 2x access to physical memory for each memory access operation.\""
+      ],
+      "examTraps": [
+        "Finding a mapping in the page table is not the final step; you still have to access the actual data in memory afterward."
+      ],
+      "visualizationSpec": ""
+    },
+    {
+      "id": "c4",
+      "name": "Translation Lookaside Buffer (TLB)",
+      "definition": "A dedicated cache inside the processor specifically for the Page Table.",
+      "explanation": "Visual Explanation: A sticky note on your monitor with the most frequent hotel registry lookups, saving you the trip to the heavy registry book.\nPrevents needing to access memory twice for every operation. Separate TLBs exist for Instruction and Data caches.",
+      "profNotes": [
+        "\"DON'T FORGET TO CHECK THE CACHES FIRST, PRIOR THE MAIN MEMORY.\" Accompanied by a Homelander meme referencing locality and repeated translations."
+      ],
+      "examTraps": [
+        "A TLB miss is not a Page Fault. A TLB miss just means checking the main Page Table. A Page Fault means it's not in the Page Table at all."
+      ],
+      "visualizationSpec": ""
+    },
+    {
+      "id": "c5",
+      "name": "Page Faults",
+      "definition": "An exception thrown when a requested Virtual Page is not in main memory.",
+      "explanation": "Visual Explanation: Opening the filing cabinet and realizing the file you need is at an off-site storage facility.\nHappens if the table is too big and stored in secondary storage, or if accessed for the first time and the OS hasn't mapped it yet. The OS is alerted to handle it.",
+      "profNotes": [
+        "\"Also ofc not in TLB since it is a subset.\""
+      ],
+      "examTraps": [],
+      "visualizationSpec": ""
+    },
+    {
+      "id": "c6",
+      "name": "I/O Systems and Buses",
+      "definition": "Mechanisms used to connect computers with external peripherals (keyboards, monitors, printers, etc.).",
+      "explanation": "Visual Explanation: A multi-lane highway (Parallel) versus a single-lane dirt road (Serial) connecting a city (CPU) to a factory (Device).\nProcessor accesses I/O via address and data buses. Serial I/O sends bits one by one (slower bandwidth, cheaper, uses fewer wires). Parallel I/O sends multiple bits at once (faster bandwidth, more costly).",
+      "profNotes": [
+        "\"It is not possible to have a separate bus for each of the peripherals. So they need to share the same bus.\""
+      ],
+      "examTraps": [],
+      "visualizationSpec": ""
+    },
+    {
+      "id": "c7",
+      "name": "Synchronous vs. Asynchronous Transfers",
+      "definition": "How devices time their data shipments.",
+      "explanation": "Visual Explanation: Synchronous is a rowing team moving to a coxswain's metronome. Asynchronous is passing a baton when both runners nod they are ready.\nSynchronous has a clock, is faster, and has less data loss (SPI, I2C). Asynchronous lacks a clock, transfers data anytime, uses start/stop bits, is simpler but slower (UART, RS-232).",
+      "profNotes": [],
+      "examTraps": [],
+      "visualizationSpec": ""
+    },
+    {
+      "id": "c8",
+      "name": "Bus Arbitration",
+      "definition": "The system dictating which device gets to use the shared bus at any given moment.",
+      "explanation": "Visual Explanation: A traffic cop (Arbiter) standing at a heavily congested intersection.\nMust balance Priority (GPU > Keyboard) and Fairness (preventing starvation).\nDaisy Chaining: Devices ask for access via a Request Line. Arbiter grants access down a line. Highest priority is closest to arbiter. Less complex, cheaper, but unfair (starvation) and has a single point of failure.\nCentral Bus Arbitration: Each device has its own request line. Flexible for fairness/priority, but costly and complex.",
+      "profNotes": [],
+      "examTraps": [],
+      "visualizationSpec": "Bus Arbitration (Daisy Chaining) Minigame\n\n* **Screen Elements:** A \"Bus Arbiter\" block on the left, connected to four device blocks (A, B, C, D) in a horizontal line via a single wire.\n* **Interaction:** User taps devices to generate \"Access Requests\".\n* **Animation:** A \"Grant\" token travels from the Arbiter block rightward. It stops at the first device that requested it.\n* **State Change:** If the user spams Device A, Device D turns gray to indicate \"Starvation\"."
+    },
+    {
+      "id": "c9",
+      "name": "Direct Memory Access (DMA)",
+      "definition": "A special controller that handles data transfers between an I/O device and memory without bothering the CPU.",
+      "explanation": "Visual Explanation: Hiring a moving company (DMA) to transport boxes from your old house to the new one while you (CPU) stay at your desk working.\nCPU setups the DMA. DMA takes control of the bus, transfers data, and interrupts the CPU when finished. Fast and frees up the CPU, but requires complex hardware.",
+      "profNotes": [],
+      "examTraps": [],
+      "visualizationSpec": ""
+    },
+    {
+      "id": "c10",
+      "name": "Polling vs. Interrupts",
+      "definition": "Methods for the CPU to know if an I/O device needs attention.",
+      "explanation": "Visual Explanation: Polling is a parent repeatedly asking \"Are we there yet?\" every 5 minutes. Interrupts are the kids sitting quietly until they press a button to say \"We are here!\"\nPolling continuously checks a status register (CPU has control, but wastes time). Interrupt-driven I/O relies on the peripheral sending a signal upon state change (CPU handles immediately).",
+      "profNotes": [],
+      "examTraps": [],
+      "visualizationSpec": ""
+    }
+  ],
+  "visualizations": [
+    {
+      "title": "Virtual to Physical Translation Animation",
+      "spec": "* **Screen Elements:** Two vertical stacks of blocks representing \"Virtual Memory\" (left) and \"Physical Memory\" (right). A small register block labeled \"Page Table Register\".\n* **Interaction:** User inputs a 32-bit hex address.\n* **Animation:** Address splits visually into \"Page #\" and \"Offset\". The Page # flies into the Page Table Register to find a match. A line draws from the left stack, through the table, landing on a block in the right stack.\n* **State Change:** The physical block highlights green. The 12-bit offset slides over to attach to the new physical page number, forming the final address.",
+      "conceptId": "c1"
+    },
+    {
+      "title": "Bus Arbitration (Daisy Chaining) Minigame",
+      "spec": "* **Screen Elements:** A \"Bus Arbiter\" block on the left, connected to four device blocks (A, B, C, D) in a horizontal line via a single wire.\n* **Interaction:** User taps devices to generate \"Access Requests\".\n* **Animation:** A \"Grant\" token travels from the Arbiter block rightward. It stops at the first device that requested it.\n* **State Change:** If the user spams Device A, Device D turns gray to indicate \"Starvation\".",
+      "conceptId": "c8"
+    }
+  ],
+  "quiz": [
+    {
+      "q": "What is the primary reason for implementing Virtual Memory?",
+      "options": [
+        "To boost processor clock speed",
+        "To allow programs to use more memory than physically available in Main Memory",
+        "To completely replace Cache memory",
+        "To permanently store data without power"
+      ],
+      "answer": 1,
+      "difficulty": 1,
+      "concept": "Virtual Memory Rationale",
+      "explanation": "Virtual Memory uses hard disks to increase the utilized memory space because systems often do not have enough main memory for all running programs."
+    },
+    {
+      "q": "What analogous Cache term corresponds to a Virtual Memory 'Page'?",
+      "options": [
+        "Miss",
+        "Tag",
+        "Block",
+        "Offset"
+      ],
+      "answer": 2,
+      "difficulty": 1,
+      "concept": "Cache and VM Terminology",
+      "explanation": "In virtual memory, a Page is the equivalent of a Cache Block."
+    },
+    {
+      "q": "If a system uses a 4KB page size, how many bits are reserved for the page offset?",
+      "options": [
+        "10 bits",
+        "12 bits",
+        "16 bits",
+        "32 bits"
+      ],
+      "answer": 1,
+      "difficulty": 2,
+      "concept": "Address Translation",
+      "explanation": "4KB is 4096 bytes, which is 2^12. Therefore, 12 bits are required to address every byte within that page."
+    },
+    {
+      "q": "During Address Translation, which part of the virtual address is modified?",
+      "options": [
+        "The Page Offset",
+        "The Virtual Page Number",
+        "Both the Page Number and Offset",
+        "Neither"
+      ],
+      "answer": 1,
+      "difficulty": 2,
+      "concept": "Address Translation",
+      "explanation": "Only the Virtual Page Number is translated into the Physical Page Number. The offset remains exactly the same."
+    },
+    {
+      "q": "Why does a processor without a TLB suffer a performance penalty when using Virtual Memory?",
+      "options": [
+        "It causes continuous page faults",
+        "It forces all data to be stored on the hard drive",
+        "It requires 2x access to physical memory for every memory operation",
+        "It disables the L1 Cache"
+      ],
+      "answer": 2,
+      "difficulty": 2,
+      "concept": "The Page Table",
+      "explanation": "Without a TLB, the processor must first access the Page Table in main memory to get the translation, and then access main memory again to get the actual data."
+    },
+    {
+      "q": "What is a Translation Lookaside Buffer (TLB)?",
+      "options": [
+        "A secondary hard drive",
+        "A cache for the Page Table located inside the processor",
+        "An I/O peripheral",
+        "A component of the DMA controller"
+      ],
+      "answer": 1,
+      "difficulty": 1,
+      "concept": "TLB",
+      "explanation": "The TLB caches recent page table translations inside the processor to avoid slow main memory lookups."
+    },
+    {
+      "q": "What triggers a Page Fault?",
+      "options": [
+        "A TLB hit",
+        "A device interrupting the CPU",
+        "The requested page number is not found in the Page Table",
+        "Two devices attempting to use the bus simultaneously"
+      ],
+      "answer": 2,
+      "difficulty": 2,
+      "concept": "Page Faults",
+      "explanation": "A Page Fault is an exception that occurs when the virtual page requested is not currently mapped in the Page Table (often because it is stored on disk)."
+    },
+    {
+      "q": "Which of the following is a disadvantage of Daisy Chaining bus arbitration?",
+      "options": [
+        "It is overly complex to implement",
+        "It is very expensive",
+        "It can cause starvation for devices far from the arbiter",
+        "It requires a separate request line for every device"
+      ],
+      "answer": 2,
+      "difficulty": 2,
+      "concept": "Bus Arbitration",
+      "explanation": "Because the grant signal passes through devices sequentially, high-priority devices closer to the arbiter can continuously claim the bus, starving devices further down."
+    },
+    {
+      "q": "How does Direct Memory Access (DMA) benefit the system?",
+      "options": [
+        "It increases processor clock speeds",
+        "It handles data transfers without CPU intervention, freeing the CPU",
+        "It translates virtual addresses faster than a TLB",
+        "It prevents single points of failure in daisy chains"
+      ],
+      "answer": 1,
+      "difficulty": 1,
+      "concept": "DMA",
+      "explanation": "The DMA controller takes over the bus to transfer data between I/O and memory, allowing the CPU to execute other tasks simultaneously."
+    },
+    {
+      "q": "Which I/O communication method wastes CPU cycles by continuously checking device status?",
+      "options": [
+        "Interrupt-driven I/O",
+        "Polling",
+        "Asynchronous transfer",
+        "Memory Mapped I/O"
+      ],
+      "answer": 1,
+      "difficulty": 1,
+      "concept": "Polling vs Interrupts",
+      "explanation": "Polling requires the CPU to continuously check the peripheral's status register, preventing it from doing useful work."
+    },
+    {
+      "q": "TRACE: A 32-bit virtual address is 0x00005B12. The system uses a 4KB page size. What is the Virtual Page Number?",
+      "options": [
+        "0x00005",
+        "0x5B12",
+        "0x0000",
+        "0xB12"
+      ],
+      "answer": 0,
+      "difficulty": 3,
+      "concept": "Address Translation",
+      "explanation": "With a 4KB page, the lowest 12 bits (3 hex digits) represent the offset. So, 'B12' is the offset. The remaining upper bits '0x00005' represent the Virtual Page Number."
+    },
+    {
+      "q": "TRACE: Given Virtual Address 0x0000247C. The Page Table maps Virtual Page 0x00002 to Physical Page 0x7FFE. What is the final Physical Address?",
+      "options": [
+        "0x0000247C",
+        "0x7FFE000",
+        "0x7FFE47C",
+        "0x00002FFE"
+      ],
+      "answer": 2,
+      "difficulty": 3,
+      "concept": "Address Translation",
+      "explanation": "The offset '47C' remains unchanged. The Virtual Page '0x00002' is replaced by '0x7FFE'. Combining them yields 0x7FFE47C."
+    },
+    {
+      "q": "TRACE: A system executes a Load instruction. The TLB misses, but the Page Table hits. What happens next?",
+      "options": [
+        "A Page Fault exception is thrown",
+        "The OS fetches data from the hard drive",
+        "The physical address is calculated and data is loaded from main memory (or cache)",
+        "The program crashes"
+      ],
+      "answer": 2,
+      "difficulty": 3,
+      "concept": "TLB and Page Tables",
+      "explanation": "A TLB miss just means the translation wasn't cached. Since it hit in the Page Table, the address is successfully translated, and the CPU proceeds to fetch the actual data."
+    }
+  ],
+  "flashcards": [
+    {
+      "front": "Virtual Memory",
+      "back": "Using secondary storage (hard disks) to simulate having more main memory than physically available.",
+      "concept": "Virtual Memory Rationale"
+    },
+    {
+      "front": "Page Offset",
+      "back": "The lower bits of an address that determine the specific byte within a page. It does not change during translation.",
+      "concept": "Address Translation"
+    },
+    {
+      "front": "Page Table",
+      "back": "A data structure in main memory managed by the OS that maps virtual page numbers to physical page numbers.",
+      "concept": "The Page Table"
+    },
+    {
+      "front": "TLB (Translation Lookaside Buffer)",
+      "back": "A small cache inside the processor that stores recent page table translations to speed up memory access.",
+      "concept": "TLB"
+    },
+    {
+      "front": "Page Fault",
+      "back": "An exception that occurs when a requested virtual page is not found in the Page Table, requiring the OS to fetch it from disk.",
+      "concept": "Page Faults"
+    },
+    {
+      "front": "Daisy Chaining",
+      "back": "A bus arbitration scheme where a grant signal passes sequentially through devices; simple but prone to starvation.",
+      "concept": "Bus Arbitration"
+    },
+    {
+      "front": "DMA (Direct Memory Access)",
+      "back": "A controller that transfers data directly between an I/O device and memory, freeing the CPU to do other work.",
+      "concept": "DMA"
+    },
+    {
+      "front": "Interrupt-driven I/O",
+      "back": "An I/O scheme where a peripheral sends a signal to the CPU only when its state changes or it needs attention.",
+      "concept": "Polling vs Interrupts"
+    }
+  ],
+  "bossBattle": {
+    "title": "Boss Battle",
+    "scenario": "The Scenario: The Heavy Datapath\nYou are writing a graphics-intensive application. The CPU issues a memory read for virtual address 0x00006A20. The system uses 4KB pages.",
+    "stages": [
+      {
+        "prompt": "Dissection\nSeparate the virtual address into the Virtual Page Number and the Page Offset.",
+        "options": [],
+        "answer": -1,
+        "answerText": "Virtual Page Number = 0x00006. Page Offset = 0xA20.",
+        "explanation": "A 4KB page means $2^{12}$ bytes, which requires 12 bits for the offset. 12 bits equals 3 hexadecimal characters. The rightmost three characters (A20) form the offset. The rest (0x00006) is the page number."
+      },
+      {
+        "prompt": "The Fast Path Check\nThe CPU first checks a specific hardware component to translate 0x00006 quickly. What is this component?",
+        "options": [],
+        "answer": -1,
+        "answerText": "The Translation Lookaside Buffer (TLB).",
+        "explanation": "The TLB acts as a hardware cache specifically for page table entries to avoid the latency of searching main memory."
+      },
+      {
+        "prompt": "The Slow Path Fallback\nThe TLB returns a Miss. Where does the processor look next, and how does it know where to find it?",
+        "options": [],
+        "answer": -1,
+        "answerText": "It checks the Page Table in main memory, located via the Page Table Register.",
+        "explanation": "Since the TLB didn't have the cached translation, the processor must read the official, OS-managed Page Table in main memory."
+      },
+      {
+        "prompt": "Disaster Strikes\nThe Page Table entry for 0x00006 is marked as invalid/not present. What hardware exception is triggered, and what handles it?",
+        "options": [],
+        "answer": -1,
+        "answerText": "A Page Fault exception is triggered, alerting the Operating System.",
+        "explanation": "Because the memory isn't currently in RAM, the hardware traps to the OS. The OS will use a DMA controller to fetch the page from the Hard Drive into an empty physical page in main memory, update the Page Table, and resume the instruction."
+      }
+    ]
+  },
+  "connections": "* **To Caches (Previous Weeks):** Virtual Memory concepts strongly mirror cache concepts. A Virtual Page acts like a Cache Block. A Page Fault is essentially a severe Cache Miss that requires disk access. The TLB is literally a cache engineered strictly for translation data.\n* **To Pipelining & Exceptions (Previous Weeks):** A Page Fault triggers a pipeline exception. The pipeline must be flushed, the OS takes control to handle the disk I/O, and the instruction is restarted once the data is in main memory.\n* **To CPU Datapath (Previous Weeks):** Earlier datapaths only showed direct access to main memory. This week clarifies that the datapath communicates with secondary storage and external peripherals strictly through OS-managed I/O operations and buses.",
+  "subjectId": "computer-architecture"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "computer-architecture",
+  "title": "Computer Architecture",
+  "subtitle": "Patterson & Hennessy · LEGv8/ARMv8",
+  "description": "Single-cycle and pipelined processors, hazards, branch prediction, caches, virtual memory, and I/O — the second half of the course.",
+  "unitLabel": "Week",
+  "accent": "#4FC3F7",
+  "icon": "memory",
+  "status": "available",
+  "format": "archquest-weekly"
+}
