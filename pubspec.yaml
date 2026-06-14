@@ -17,6 +17,8 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  image: ^4.8.0
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
@@ -26,3 +28,13 @@ flutter:
     # Add a line here when you add a new subject folder.
     - assets/data/
     - assets/data/computer-architecture/
+
+# Launcher icon generation. Source PNG is produced by tool/generate_icon.dart.
+# Regenerate platform icons with: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  image_path: "assets/icon/archquest_icon.png"
+  adaptive_icon_background: "#121212"
+  adaptive_icon_foreground: "assets/icon/archquest_icon.png"

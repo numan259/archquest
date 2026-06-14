@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'constants/strings.dart';
 import 'providers/app_state_provider.dart';
 import 'providers/progress_provider.dart';
+import 'screens/splash_screen.dart';
 import 'screens/subjects_screen.dart';
 import 'services/content_loader.dart';
 import 'services/progress_service.dart';
@@ -15,13 +16,18 @@ Future<void> main() async {
   final progressService = ProgressService();
   await progressService.init();
 
-  runApp(ArchQuestApp(progressService: progressService));
+  runApp(ArchQuestApp(
+      progressService: progressService, home: const SplashScreen()));
 }
 
 class ArchQuestApp extends StatelessWidget {
-  const ArchQuestApp({super.key, required this.progressService});
+  const ArchQuestApp({super.key, required this.progressService, this.home});
 
   final ProgressService progressService;
+
+  /// Entry screen. The real app passes [SplashScreen]; tests omit it to boot
+  /// straight to the Subjects screen (avoiding the splash timer).
+  final Widget? home;
 
   @override
   Widget build(BuildContext context) {
@@ -34,7 +40,7 @@ class ArchQuestApp extends StatelessWidget {
         title: Strings.appName,
         debugShowCheckedModeBanner: false,
         theme: AppTheme.dark,
-        home: const SubjectsScreen(),
+        home: home ?? const SubjectsScreen(),
       ),
     );
   }

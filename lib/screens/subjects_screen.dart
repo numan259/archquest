@@ -5,6 +5,7 @@ import '../constants/strings.dart';
 import '../models/subject.dart';
 import '../providers/app_state_provider.dart';
 import '../theme/app_theme.dart';
+import '../widgets/level_header.dart';
 import 'week_list_screen.dart';
 
 /// Root screen: the list of subjects. Tapping an available subject opens its
@@ -45,15 +46,18 @@ class _SubjectList extends StatelessWidget {
             style: TextStyle(color: AppColors.onSurfaceMuted)),
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-      itemCount: subjects.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 14),
-      itemBuilder: (context, i) {
-        final subject = subjects[i];
-        final unitCount = app.unitsFor(subject.id).length;
-        return _SubjectCard(subject: subject, unitCount: unitCount);
-      },
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
+      children: [
+        const LevelHeader(),
+        const SizedBox(height: 8),
+        for (final subject in subjects)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+            child: _SubjectCard(
+                subject: subject, unitCount: app.unitsFor(subject.id).length),
+          ),
+      ],
     );
   }
 }

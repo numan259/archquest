@@ -19,6 +19,15 @@ const int _streakThreshold = 5;
 const double _streakMultiplier = 1.5;
 const int _passPercent = 70;
 
+/// XP for one correct answer: `10 × difficulty`, multiplied by 1.5 once the
+/// running [streak] (counting this answer) reaches the threshold. Pure so it
+/// can be unit-tested directly.
+int quizXp(int difficultyStars, int streak) {
+  var gained = _xpPerDifficulty * difficultyStars;
+  if (streak >= _streakThreshold) gained = (gained * _streakMultiplier).round();
+  return gained;
+}
+
 /// A quiz question with its options pre-shuffled, remembering where the
 /// correct option landed.
 class _QuizItem {
@@ -78,11 +87,7 @@ class _QuizScreenState extends State<QuizScreen> {
         _correct++;
         _streak++;
         _bestStreak = max(_bestStreak, _streak);
-        var gained = _xpPerDifficulty * _current.question.stars;
-        if (_streak >= _streakThreshold) {
-          gained = (gained * _streakMultiplier).round();
-        }
-        _earnedXp += gained;
+        _earnedXp += quizXp(_current.question.stars, _streak);
       } else {
         _streak = 0;
       }

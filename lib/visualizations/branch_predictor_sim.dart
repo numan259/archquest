@@ -1,28 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
-
-/// The four states of a 2-bit saturating counter. The two "Taken" states
-/// predict taken; the two "Not Taken" states predict not taken.
-enum _S2 {
-  strongTaken('Strong\nTaken', true),
-  weakTaken('Weak\nTaken', true),
-  weakNotTaken('Weak\nNot Taken', false),
-  strongNotTaken('Strong\nNot Taken', false);
-
-  const _S2(this.label, this.predictsTaken);
-  final String label;
-  final bool predictsTaken;
-
-  /// One step of the saturating counter: a taken outcome moves toward
-  /// strongTaken, a not-taken outcome toward strongNotTaken.
-  _S2 next(bool taken) => switch (this) {
-        _S2.strongTaken => taken ? _S2.strongTaken : _S2.weakTaken,
-        _S2.weakTaken => taken ? _S2.strongTaken : _S2.weakNotTaken,
-        _S2.weakNotTaken => taken ? _S2.weakTaken : _S2.strongNotTaken,
-        _S2.strongNotTaken => taken ? _S2.weakNotTaken : _S2.strongNotTaken,
-      };
-}
+import 'predictor_fsm.dart';
 
 /// The lecture's nested-loop outcome pattern: taken six times, then the loop
 /// exit (not taken), repeating.
@@ -38,7 +17,7 @@ class BranchPredictorSim extends StatefulWidget {
 }
 
 class _BranchPredictorSimState extends State<BranchPredictorSim> {
-  _S2 _state = _S2.strongTaken;
+  Predictor2BitState _state = Predictor2BitState.strongTaken;
   bool _oneBitTaken = true; // 1-bit predictor's single remembered bit
   int _step = 0;
   int _twoHits = 0, _oneHits = 0, _total = 0;
@@ -48,7 +27,7 @@ class _BranchPredictorSimState extends State<BranchPredictorSim> {
 
   void _reset() {
     setState(() {
-      _state = _S2.strongTaken;
+      _state = Predictor2BitState.strongTaken;
       _oneBitTaken = true;
       _step = 0;
       _twoHits = _oneHits = _total = 0;
@@ -252,14 +231,14 @@ class _BranchPredictorSimState extends State<BranchPredictorSim> {
 /// the active state glowing.
 class _Diagram extends StatelessWidget {
   const _Diagram({required this.active});
-  final _S2 active;
+  final Predictor2BitState active;
 
   // Fractional centres within the diagram box.
   static const _pos = {
-    _S2.strongTaken: Offset(0.27, 0.27),
-    _S2.weakTaken: Offset(0.73, 0.27),
-    _S2.weakNotTaken: Offset(0.73, 0.73),
-    _S2.strongNotTaken: Offset(0.27, 0.73),
+    Predictor2BitState.strongTaken: Offset(0.27, 0.27),
+    Predictor2BitState.weakTaken: Offset(0.73, 0.27),
+    Predictor2BitState.weakNotTaken: Offset(0.73, 0.73),
+    Predictor2BitState.strongNotTaken: Offset(0.27, 0.73),
   };
 
   @override
@@ -267,14 +246,14 @@ class _Diagram extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, c) {
         final size = Size(c.maxWidth, c.maxHeight);
-        Offset px(_S2 s) =>
+        Offset px(Predictor2BitState s) =>
             Offset(_pos[s]!.dx * size.width, _pos[s]!.dy * size.height);
         return Stack(
           children: [
             Positioned.fill(
               child: CustomPaint(painter: _ArrowsPainter(_pos)),
             ),
-            for (final s in _S2.values)
+            for (final s in Predictor2BitState.values)
               _node(context, s, px(s)),
           ],
         );
@@ -282,7 +261,7 @@ class _Diagram extends StatelessWidget {
     );
   }
 
-  Widget _node(BuildContext context, _S2 s, Offset center) {
+  Widget _node(BuildContext context, Predictor2BitState s, Offset center) {
     const w = 116.0, h = 66.0;
     final activeNode = s == active;
     final color = s.predictsTaken ? AppColors.success : AppColors.error;
@@ -327,23 +306,23 @@ class _Diagram extends StatelessWidget {
 /// push back toward Strong Taken. Self-loops sit on the two saturated states.
 class _ArrowsPainter extends CustomPainter {
   _ArrowsPainter(this.pos);
-  final Map<_S2, Offset> pos;
+  final Map<Predictor2BitState, Offset> pos;
 
   static const _nt = AppColors.warning;
   static const _t = AppColors.success;
 
   @override
   void paint(Canvas canvas, Size size) {
-    Offset p(_S2 s) => Offset(pos[s]!.dx * size.width, pos[s]!.dy * size.height);
+    Offset p(Predictor2BitState s) => Offset(pos[s]!.dx * size.width, pos[s]!.dy * size.height);
 
     // Chain edges (st - wt - wnt - snt), each carrying NT one way, T the other.
-    _edge(canvas, p(_S2.strongTaken), p(_S2.weakTaken), 'NT', 'T');
-    _edge(canvas, p(_S2.weakTaken), p(_S2.weakNotTaken), 'NT', 'T');
-    _edge(canvas, p(_S2.weakNotTaken), p(_S2.strongNotTaken), 'NT', 'T');
+    _edge(canvas, p(Predictor2BitState.strongTaken), p(Predictor2BitState.weakTaken), 'NT', 'T');
+    _edge(canvas, p(Predictor2BitState.weakTaken), p(Predictor2BitState.weakNotTaken), 'NT', 'T');
+    _edge(canvas, p(Predictor2BitState.weakNotTaken), p(Predictor2BitState.strongNotTaken), 'NT', 'T');
 
     // Self-loops on the saturated ends.
-    _selfLoop(canvas, p(_S2.strongTaken), const Offset(-1, -1), 'T', _t);
-    _selfLoop(canvas, p(_S2.strongNotTaken), const Offset(-1, 1), 'NT', _nt);
+    _selfLoop(canvas, p(Predictor2BitState.strongTaken), const Offset(-1, -1), 'T', _t);
+    _selfLoop(canvas, p(Predictor2BitState.strongNotTaken), const Offset(-1, 1), 'NT', _nt);
   }
 
   /// A pair of offset arrows between two node centres: forward (NT) and
